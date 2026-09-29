@@ -373,6 +373,17 @@ local UI_TEXT_SECONDARY = Color3.fromRGB(140, 144, 156)
 local UI_ACCENT_GREEN = Color3.fromRGB(0, 220, 120)
 local UI_ACCENT_GREEN_DARK = Color3.fromRGB(0, 140, 80)
 local MainFrame
+local guiDragThreshold = 8
+local toggleMoved = false
+local toggleDragInput
+local toggleDragStart
+local toggleStartPos
+local toggleDragging = false
+
+local mainDragInput
+local mainDragStart
+local mainStartPos
+local mainDragging = false
 -- ==========================================
 -- 🆕 FLOATING TOGGLE BUTTON — ADDED
 -- ==========================================
@@ -389,18 +400,18 @@ ToggleBtn.Parent = mainGui
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
 
 -- Drag Toggle Button
-local toggleDragging = false
-local toggleDragInput
-local toggleDragStart
-local toggleStartPos
-
 ToggleBtn.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
 
         toggleDragging = true
+        toggleMoved = false
         toggleDragStart = input.Position
         toggleStartPos = ToggleBtn.Position
+
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            toggleDragInput = input
+        end
     end
 end)
 
@@ -413,16 +424,23 @@ ToggleBtn.InputChanged:Connect(function(input)
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-    if toggleDragging and input == toggleDragInput then
-        local delta = input.Position - toggleDragStart
-
-        ToggleBtn.Position = UDim2.new(
-            toggleStartPos.X.Scale,
-            toggleStartPos.X.Offset + delta.X,
-            toggleStartPos.Y.Scale,
-            toggleStartPos.Y.Offset + delta.Y
-        )
+    if not toggleDragging or input ~= toggleDragInput then
+        return
     end
+
+    local delta = input.Position - toggleDragStart
+
+    if math.abs(delta.X) > guiDragThreshold
+        or math.abs(delta.Y) > guiDragThreshold then
+        toggleMoved = true
+    end
+
+    ToggleBtn.Position = UDim2.new(
+        toggleStartPos.X.Scale,
+        toggleStartPos.X.Offset + delta.X,
+        toggleStartPos.Y.Scale,
+        toggleStartPos.Y.Offset + delta.Y
+    )
 end)
 
 UserInputService.InputEnded:Connect(function(input)
@@ -441,7 +459,13 @@ local function toggleMainGUI()
     ToggleBtn.Text = STATE.guiVisible and "🐣" or "👁️"
     ToggleBtn.BackgroundColor3 = STATE.guiVisible and UI_ACCENT_GREEN or Color3.fromRGB(120, 120, 120)
 end
-ToggleBtn.MouseButton1Click:Connect(toggleMainGUI)
+ToggleBtn.Activated:Connect(function()
+    if toggleMoved then
+        return
+    end
+
+    toggleMainGUI()
+end)
 
 -- MAIN FRAME
  
@@ -478,7 +502,7 @@ local TitleLabel = makeInstance("TextLabel", {
     Size = UDim2.new(0, 300, 1, 0),
     Position = UDim2.new(0, 42, 0, 0),
     BackgroundTransparency = 1,
-    Text = "WxyneLuvsU",
+    Text = "Ypets",
     TextColor3 = UI_TEXT_MAIN,
     TextXAlignment = Enum.TextXAlignment.Left,
     Font = Enum.Font.GothamBold,

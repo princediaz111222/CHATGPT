@@ -372,7 +372,7 @@ local UI_TEXT_MAIN = Color3.fromRGB(232, 232, 238)
 local UI_TEXT_SECONDARY = Color3.fromRGB(140, 144, 156)
 local UI_ACCENT_GREEN = Color3.fromRGB(0, 220, 120)
 local UI_ACCENT_GREEN_DARK = Color3.fromRGB(0, 140, 80)
-
+local MainFrame
 -- ==========================================
 -- 🆕 FLOATING TOGGLE BUTTON — ADDED
 -- ==========================================
@@ -389,25 +389,48 @@ ToggleBtn.Parent = mainGui
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
 
 -- Drag Toggle Button
-local toggleDragStart, toggleStartPos
+local toggleDragging = false
+local toggleDragInput
+local toggleDragStart
+local toggleStartPos
+
 ToggleBtn.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+        toggleDragging = true
         toggleDragStart = input.Position
         toggleStartPos = ToggleBtn.Position
     end
 end)
+
+ToggleBtn.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+        toggleDragInput = input
+    end
+end)
+
 UserInputService.InputChanged:Connect(function(input)
-    if toggleDragStart and input.UserInputType == Enum.UserInputType.MouseMovement then
+    if toggleDragging and input == toggleDragInput then
         local delta = input.Position - toggleDragStart
+
         ToggleBtn.Position = UDim2.new(
-            toggleStartPos.X.Scale, toggleStartPos.X.Offset + delta.X,
-            toggleStartPos.Y.Scale, toggleStartPos.Y.Offset + delta.Y
+            toggleStartPos.X.Scale,
+            toggleStartPos.X.Offset + delta.X,
+            toggleStartPos.Y.Scale,
+            toggleStartPos.Y.Offset + delta.Y
         )
     end
 end)
+
 UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        toggleDragStart = nil
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+        toggleDragging = false
+        toggleDragInput = nil
     end
 end)
 
@@ -421,7 +444,8 @@ end
 ToggleBtn.MouseButton1Click:Connect(toggleMainGUI)
 
 -- MAIN FRAME
-local MainFrame = makeInstance("Frame", {
+ 
+MainFrame = makeInstance("Frame", {
     Name = "Main",
     Size = UDim2.new(0, 760, 0, 660),
     Position = UDim2.new(0, 60, 0, 60),
@@ -515,26 +539,49 @@ MinimizeButton.MouseLeave:Connect(function()
 end)
 MinimizeButton.MouseButton1Click:Connect(toggleMainGUI)
 
--- ✅ FIXED: IMPROVED DRAG HANDLING for Main Frame
-local dragStartPos, frameStartPos
+-- Improved Drag Handling for Main Frame
+local dragging = false
+local dragInput
+local dragStart
+local frameStartPos
+
 TitleBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragStartPos = input.Position
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+        dragging = true
+        dragStart = input.Position
         frameStartPos = MainFrame.Position
     end
 end)
+
+TitleBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+        dragInput = input
+    end
+end)
+
 UserInputService.InputChanged:Connect(function(input)
-    if dragStartPos and input.UserInputType == Enum.UserInputType.MouseMovement then
-        local delta = input.Position - dragStartPos
+    if dragging and input == dragInput then
+        local delta = input.Position - dragStart
+
         MainFrame.Position = UDim2.new(
-            0, math.max(0, frameStartPos.X.Offset + delta.X),
-            0, math.max(0, frameStartPos.Y.Offset + delta.Y)
+            frameStartPos.X.Scale,
+            frameStartPos.X.Offset + delta.X,
+            frameStartPos.Y.Scale,
+            frameStartPos.Y.Offset + delta.Y
         )
     end
 end)
+
 UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragStartPos = nil
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+        dragging = false
+        dragInput = nil
     end
 end)
 

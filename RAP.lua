@@ -99,6 +99,8 @@ local STATE = {
     antiIdle = false,
     espState = "off",
     espObjects = {},
+    rowMisses = {},
+    espMisses = {},
     lastSort = 0,
     orderSnapshot = nil,
     guiVisible = true -- ✅ NEW: track GUI visibility
@@ -375,15 +377,11 @@ local UI_ACCENT_GREEN_DARK = Color3.fromRGB(0, 140, 80)
 local MainFrame
 local guiDragThreshold = 8
 local toggleMoved = false
-local toggleDragInput
-local toggleDragStart
-local toggleStartPos
-local toggleDragging = false
 
-local mainDragInput
-local mainDragStart
-local mainStartPos
 local mainDragging = false
+local mainDragInput = nil
+local mainDragStart = nil
+local mainStartPos = nil
 -- ==========================================
 -- 🆕 FLOATING TOGGLE BUTTON — ADDED
 -- ==========================================
@@ -564,18 +562,22 @@ end)
 MinimizeButton.MouseButton1Click:Connect(toggleMainGUI)
 
 -- Improved Drag Handling for Main Frame
+-- Improved Drag Handling for Main Frame
 local dragging = false
 local dragInput
 local dragStart
 local frameStartPos
-
 TitleBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
 
-        dragging = true
-        dragStart = input.Position
-        frameStartPos = MainFrame.Position
+        mainDragging = true
+        mainDragStart = input.Position
+        mainStartPos = MainFrame.Position
+
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            mainDragInput = input
+        end
     end
 end)
 
@@ -583,29 +585,31 @@ TitleBar.InputChanged:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseMovement
         or input.UserInputType == Enum.UserInputType.Touch then
 
-        dragInput = input
+        mainDragInput = input
     end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-    if dragging and input == dragInput then
-        local delta = input.Position - dragStart
-
-        MainFrame.Position = UDim2.new(
-            frameStartPos.X.Scale,
-            frameStartPos.X.Offset + delta.X,
-            frameStartPos.Y.Scale,
-            frameStartPos.Y.Offset + delta.Y
-        )
+    if not mainDragging or input ~= mainDragInput then
+        return
     end
+
+    local delta = input.Position - mainDragStart
+
+    MainFrame.Position = UDim2.new(
+        mainStartPos.X.Scale,
+        mainStartPos.X.Offset + delta.X,
+        mainStartPos.Y.Scale,
+        mainStartPos.Y.Offset + delta.Y
+    )
 end)
 
 UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch then
 
-        dragging = false
-        dragInput = nil
+        mainDragging = false
+        mainDragInput = nil
     end
 end)
 
@@ -1118,35 +1122,76 @@ end
 
 local function updateEsp()
     for inst in pairs(STATE.espObjects) do
-        if not inst.Parent or not STATE.eggs[inst] then
+        if not inst.Parent then
             removeEsp(inst)
+            STATE.espMisses[inst] = nil
+
+        elseif not STATE.eggs[inst] then
+            STATE.espMisses[inst] =
+                (STATE.espMisses[inst] or 0) + 1
+
+            if STATE.espMisses[inst] >= 3 then
+                removeEsp(inst)
+                STATE.espMisses[inst] = nil
+            end
+        else
+            STATE.espMisses[inst] = 0
         end
     end
+
     if STATE.espState == "off" then
-        for inst in pairs(STATE.espObjects) do removeEsp(inst) end
+        for inst in pairs(STATE.espObjects) do
+            removeEsp(inst)
+        end
+
+        STATE.espMisses = {}
         return
     end
+
     for inst, info in pairs(STATE.eggs) do
+        STATE.espMisses[inst] = 0
+
         if shouldShowEsp(info) then
-            if not STATE.espObjects[inst] then
+            local esp = STATE.espObjects[inst]
+
+            if not esp then
                 addEsp(inst, info)
-            else
-                local tierColor = TIER_COLORS[info.tier] or TIER_COLORS.Unknown
-                local hl = STATE.espObjects[inst].highlight
-                if hl then
-                    hl.FillColor = tierColor
-                    hl.OutlineColor = tierColor
+                esp = STATE.espObjects[inst]
+            end
+
+            if esp then
+                local tierColor =
+                    TIER_COLORS[info.tier]
+                    or TIER_COLORS.Unknown
+
+                if esp.highlight then
+                    esp.highlight.FillColor = tierColor
+                    esp.highlight.OutlineColor = tierColor
                 end
-                local bb = STATE.espObjects[inst].billboard
-                if bb then
-                    local nl = bb:FindFirstChild("_nameLbl")
-                    if nl then nl.Text = info.name end
-                    local il = bb:FindFirstChild("_infoLbl")
-                    if il then il.Text = formatNumber(info.value) .. " • " .. info.tier end
+
+                if esp.billboard then
+                    local nameLabel =
+                        esp.billboard:FindFirstChild("_nameLbl")
+
+                    if nameLabel then
+                        nameLabel.Text = info.name
+                        nameLabel.TextColor3 = tierColor
+                    end
+
+                    local infoLabel =
+                        esp.billboard:FindFirstChild("_infoLbl")
+
+                    if infoLabel then
+                        infoLabel.Text =
+                            formatNumber(info.value)
+                            .. " • "
+                            .. info.tier
+                    end
                 end
             end
         else
             removeEsp(inst)
+            STATE.espMisses[inst] = nil
         end
     end
 end
@@ -1461,47 +1506,77 @@ end
 -- SCAN & UPDATE LOOP
 -- ==========================================
 local function refreshLiveEggs()
-    -- remove rows for eggs that no longer exist
+    -- Keep rows alive through temporary scan misses.
     for key, row in pairs(STATE.rows) do
         if not STATE.eggs[key] then
-            row:Destroy()
-            STATE.rows[key] = nil
+            STATE.rowMisses[key] = (STATE.rowMisses[key] or 0) + 1
+
+            -- Only remove after multiple consecutive misses.
+            if STATE.rowMisses[key] >= 3 then
+                if row and row.Parent then
+                    row:Destroy()
+                end
+
+                STATE.rows[key] = nil
+                STATE.rowMisses[key] = nil
+            end
+        else
+            STATE.rowMisses[key] = 0
         end
     end
 
     local eggList = {}
+
     for model, info in pairs(STATE.eggs) do
-        table.insert(eggList, {model = model, info = info})
+        table.insert(eggList, {
+            model = model,
+            info = info
+        })
     end
 
-    local needSort = (tick() - (STATE.lastSort or 0)) >= SETTINGS.sortInterval
+    local needSort =
+        (tick() - (STATE.lastSort or 0)) >= SETTINGS.sortInterval
+
     if needSort then
         table.sort(eggList, function(a, b)
             if a.info.value ~= b.info.value then
                 return a.info.value > b.info.value
             end
+
             if a.info.name ~= b.info.name then
                 return a.info.name < b.info.name
             end
+
             return tostring(a.model) < tostring(b.model)
         end)
+
         STATE.lastSort = tick()
         STATE.orderSnapshot = eggList
     else
         local preserved = STATE.orderSnapshot or {}
         local rebuilt = {}
         local seen = {}
+
         for _, entry in ipairs(preserved) do
             if STATE.eggs[entry.model] then
-                table.insert(rebuilt, {model = entry.model, info = STATE.eggs[entry.model]})
+                table.insert(rebuilt, {
+                    model = entry.model,
+                    info = STATE.eggs[entry.model]
+                })
+
                 seen[entry.model] = true
             end
         end
+
         for model, info in pairs(STATE.eggs) do
             if not seen[model] then
-                table.insert(rebuilt, {model = model, info = info})
+                table.insert(rebuilt, {
+                    model = model,
+                    info = info
+                })
             end
         end
+
         eggList = rebuilt
     end
 
@@ -1510,51 +1585,77 @@ local function refreshLiveEggs()
 
     for idx, entry in ipairs(eggList) do
         local existingRow = STATE.rows[entry.model]
-        if not existingRow then
+
+        if not existingRow or not existingRow.Parent then
             renderLiveRow(entry.model, entry.info)
             existingRow = STATE.rows[entry.model]
         else
-            local infoLabel = existingRow:FindFirstChild("_infoLbl")
+            STATE.rowMisses[entry.model] = 0
+
+            local tierColor =
+                TIER_COLORS[entry.info.tier] or TIER_COLORS.Unknown
+
+            local nameLabel =
+                existingRow:FindFirstChild("_nameLbl")
+
+            if nameLabel then
+                nameLabel.Text = entry.info.name
+                nameLabel.TextColor3 = tierColor
+            end
+
+            local infoLabel =
+                existingRow:FindFirstChild("_infoLbl")
+
             if infoLabel then
-                local newText = formatNumber(entry.info.value) .. "  •  " .. entry.info.tier
+                local newText =
+                    formatNumber(entry.info.value)
+                    .. "  •  "
+                    .. entry.info.tier
+
                 if not entry.info.free then
                     newText = newText .. "  •  contested"
                 end
-                if infoLabel.Text ~= newText then
-                    infoLabel.Text = newText
-                end
+
+                infoLabel.Text = newText
             end
 
-            local btn = existingRow:FindFirstChild("_stealBtn")
+            local tierBar = existingRow:FindFirstChildOfClass("Frame")
+
+            if tierBar then
+                tierBar.BackgroundColor3 = tierColor
+            end
+
+            local btn =
+                existingRow:FindFirstChild("_stealBtn")
+
             if btn then
-                local newColor = entry.info.free and Color3.fromRGB(180, 40, 40) or Color3.fromRGB(60, 40, 40)
-                local newLabel = entry.info.free and "steal" or "wait"
-                if btn.BackgroundColor3 ~= newColor then
-                    btn.BackgroundColor3 = newColor
-                end
-                if btn.Text ~= newLabel then
-                    btn.Text = newLabel
-                end
+                btn.BackgroundColor3 =
+                    entry.info.free
+                    and Color3.fromRGB(180, 40, 40)
+                    or Color3.fromRGB(60, 40, 40)
+
+                btn.Text =
+                    entry.info.free
+                    and "steal"
+                    or "wait"
             end
         end
 
-        if existingRow and existingRow.LayoutOrder ~= idx then
+        if existingRow then
             existingRow.LayoutOrder = idx
         end
     end
 
     if shouldRestoreScroll then
         task.defer(function()
-            pcall(function() LiveFrame.CanvasPosition = scrollPos end)
-        end)
-        task.delay(0.05, function()
-            pcall(function() LiveFrame.CanvasPosition = scrollPos end)
+            pcall(function()
+                LiveFrame.CanvasPosition = scrollPos
+            end)
         end)
     end
 
     updateEsp()
 end
-
 -- main scanner loop
 task.spawn(function()
     while mainGui.Parent do

@@ -10,10 +10,7 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 
 -- PLAYER & CONFIGURATION
 local LocalPlayer = Players.LocalPlayer
-local URL_VALIDATE = "https://rideapet-keys.engr-wayne02.workers.dev/validate"
-local URL_GETKEY = "https://rideapet-keys.engr-wayne02.workers.dev/getkey"
 local URL_DISCORD = "https://discord.gg/ekhgEzZQx"
-local FILE_KEY = "rideapet_key.txt"
 
 -- COLOR PALETTE
 local C_SUCCESS = Color3.fromRGB(0, 255, 136)
@@ -149,28 +146,6 @@ local function fetchUrl(url)
     return nil
 end
 
-local function loadSavedKey()
-    if readfile and isfile then
-        local success, key = pcall(readfile, FILE_KEY)
-        if success and #key > 0 then
-            return key:gsub("%s+", "")
-        end
-    end
-    return nil
-end
-
-local function saveKey(key)
-    if writefile then
-        pcall(writefile, FILE_KEY, key)
-    end
-end
-
-local function validateKey(key)
-    local userId = tostring(LocalPlayer.UserId)
-    local response = fetchUrl(URL_VALIDATE .. "?key=" .. key .. "&uid=" .. userId)
-    if not response then return "error" end
-    return response
-end
 
 local function copyDiscordLink(uiTextLabel)
     if setclipboard then
@@ -1090,6 +1065,7 @@ EspBtn.MouseButton1Click:Connect(cycleEspMode)
 -- ==========================================
 -- CATALOG & LIVE ROWS
 -- ==========================================
+
 local function renderCatalogRow(eggName, info, index)
     if STATE.catalogRows[eggName] then
         STATE.catalogRows[eggName]:Destroy()
@@ -1182,83 +1158,6 @@ local function buildCatalog()
         renderCatalogRow(entry.name, entry.data, index)
     end
 end
-
--- ==========================================
--- LIVE EGG ROWS
--- ==========================================
-local function renderLiveRow(eggKey, info)
-    if STATE.rows[eggKey] then
-        STATE.rows[eggKey]:Destroy()
-    end
-
-    local tierColor = TIER_COLORS[info.tier] or TIER_COLORS.Unknown
-    local row = makeInstance("Frame", {
-        Size = UDim2.new(1, -8, 0, 42),
-        BackgroundColor3 = UI_BG_BUTTON,
-        LayoutOrder = 0
-    }, LiveFrame)
-    makeInstance("UICorner", {CornerRadius = UDim.new(0, 8)}, row)
-
-    makeInstance("Frame", {
-        Size = UDim2.new(0, 3, 1, -12),
-        Position = UDim2.new(0, 0, 0, 6),
-        BackgroundColor3 = tierColor
-    }, row)
-
-    makeInstance("TextLabel", {
-        Name = "_nameLbl",
-        Size = UDim2.new(1, -130, 0, 16),
-        Position = UDim2.new(0, 12, 0, 4),
-        BackgroundTransparency = 1,
-        Text = info.name,
-        TextColor3 = tierColor,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Font = Enum.Font.GothamBold,
-        TextSize = 12
-    }, row)
-
-    local statusText = formatNumber(info.value) .. "  •  " .. info.tier
-    if not info.free then
-        statusText = statusText .. "  •  contested"
-    end
-    makeInstance("TextLabel", {
-        Name = "_infoLbl",
-        Size = UDim2.new(1, -130, 0, 14),
-        Position = UDim2.new(0, 12, 0, 22),
-        BackgroundTransparency = 1,
-        Text = statusText,
-        TextColor3 = UI_TEXT_SECONDARY,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Font = Enum.Font.Code,
-        TextSize = 10
-    }, row)
-
-    local stealBtn = makeInstance("TextButton", {
-        Name = "_stealBtn",
-        Size = UDim2.new(0, 90, 0, 28),
-        Position = UDim2.new(1, -100, 0.5, -14),
-        BackgroundColor3 = info.free and Color3.fromRGB(180, 40, 40) or Color3.fromRGB(60, 40, 40),
-        Text = info.free and "steal" or "wait",
-        TextColor3 = Color3.fromRGB(255, 255, 255),
-        Font = Enum.Font.GothamBold,
-        TextSize = 11,
-        AutoButtonColor = false
-    }, row)
-    makeInstance("UICorner", {CornerRadius = UDim.new(0, 8)}, stealBtn)
-
-    stealBtn.MouseButton1Click:Connect(function()
-        if STATE.busy then return end
-        local freshInfo = STATE.eggs[eggKey]
-        if freshInfo and freshInfo.free then
-            task.spawn(function()
-                grabEgg(freshInfo, eggKey)
-            end)
-        end
-    end)
-
-    STATE.rows[eggKey] = row
-end
-
 -- ==========================================
 -- GRAB / STEAL LOGIC
 -- ==========================================
@@ -1370,6 +1269,83 @@ function grabEgg(eggInfo, eggKey)
     restoreBreakTimer()
     cleanup()
 end
+-- ==========================================
+-- LIVE EGG ROWS
+-- ==========================================
+local function renderLiveRow(eggKey, info)
+    if STATE.rows[eggKey] then
+        STATE.rows[eggKey]:Destroy()
+    end
+
+    local tierColor = TIER_COLORS[info.tier] or TIER_COLORS.Unknown
+    local row = makeInstance("Frame", {
+        Size = UDim2.new(1, -8, 0, 42),
+        BackgroundColor3 = UI_BG_BUTTON,
+        LayoutOrder = 0
+    }, LiveFrame)
+    makeInstance("UICorner", {CornerRadius = UDim.new(0, 8)}, row)
+
+    makeInstance("Frame", {
+        Size = UDim2.new(0, 3, 1, -12),
+        Position = UDim2.new(0, 0, 0, 6),
+        BackgroundColor3 = tierColor
+    }, row)
+
+    makeInstance("TextLabel", {
+        Name = "_nameLbl",
+        Size = UDim2.new(1, -130, 0, 16),
+        Position = UDim2.new(0, 12, 0, 4),
+        BackgroundTransparency = 1,
+        Text = info.name,
+        TextColor3 = tierColor,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Font = Enum.Font.GothamBold,
+        TextSize = 12
+    }, row)
+
+    local statusText = formatNumber(info.value) .. "  •  " .. info.tier
+    if not info.free then
+        statusText = statusText .. "  •  contested"
+    end
+    makeInstance("TextLabel", {
+        Name = "_infoLbl",
+        Size = UDim2.new(1, -130, 0, 14),
+        Position = UDim2.new(0, 12, 0, 22),
+        BackgroundTransparency = 1,
+        Text = statusText,
+        TextColor3 = UI_TEXT_SECONDARY,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Font = Enum.Font.Code,
+        TextSize = 10
+    }, row)
+
+    local stealBtn = makeInstance("TextButton", {
+        Name = "_stealBtn",
+        Size = UDim2.new(0, 90, 0, 28),
+        Position = UDim2.new(1, -100, 0.5, -14),
+        BackgroundColor3 = info.free and Color3.fromRGB(180, 40, 40) or Color3.fromRGB(60, 40, 40),
+        Text = info.free and "steal" or "wait",
+        TextColor3 = Color3.fromRGB(255, 255, 255),
+        Font = Enum.Font.GothamBold,
+        TextSize = 11,
+        AutoButtonColor = false
+    }, row)
+    makeInstance("UICorner", {CornerRadius = UDim.new(0, 8)}, stealBtn)
+
+    stealBtn.MouseButton1Click:Connect(function()
+        if STATE.busy then return end
+        local freshInfo = STATE.eggs[eggKey]
+        if freshInfo and freshInfo.free then
+            task.spawn(function()
+                grabEgg(freshInfo, eggKey)
+            end)
+        end
+    end)
+
+    STATE.rows[eggKey] = row
+end
+
+
 
 -- ==========================================
 -- SCAN & UPDATE LOOP
